@@ -5,6 +5,8 @@ import openai
 from fastapi import FastAPI, File, UploadFile
 from gradio_client import Client
 from pydub import AudioSegment
+import cv2
+import numpy as np
 
 # openai.api_key = os.getenv("OPENAI_API_KEY") or "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"
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -81,7 +83,8 @@ def generate_story(song_lyrics, n):
 
 
 def generate_storyboard(story, n):
-    """Generate n key frames from the given story.
+    """
+    Generate n key frames from the given story.
     :return: A list of n key frames
     """
     response = openai.ChatCompletion.create(
@@ -121,8 +124,73 @@ def generate_storyboard(story, n):
     return frames
 
 
-if __name__ == "__main__":
-    import uvicorn
+def images_to_video(image_paths, output_video_path, frame_size, fps=1):
+    """
+    Create a video from a list of images.
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    :param image_paths: List of paths to the images.
+    :param output_video_path: Path where the output video will be saved.
+    :param frame_size: The size of the video frame (width, height).
+    :param fps: Frames per second, defaults to 1.
+    """
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # You can also use 'XVID' depending on your needs
+    out = cv2.VideoWriter(output_video_path, fourcc, fps, frame_size)
+
+    for image_path in image_paths:
+        img = cv2.imread(image_path)
+        img_resized = cv2.resize(img, frame_size)  # Resize image to match frame size
+        out.write(img_resized)
+
+    out.release()
+
+
+def videos_to_video(video_paths, output_video_path, frame_size, fps=30):
+    """
+    Concatenate the first second of each video from a list of videos into a single output video.
+
+    :param video_paths: List of paths to the input videos.
+    :param output_video_path: Path where the output video will be saved.
+    :param frame_size: The size of the video frame (width, height).
+    :param fps: Frames per second for the output video, defaults to 30.
+    """
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_video_path, fourcc, fps, frame_size)
+
+    for video_path in video_paths:
+        cap = cv2.VideoCapture(video_path)
+        frames_to_read = fps
+
+        for _ in range(frames_to_read):
+            ret, frame = cap.read()
+            if not ret:
+                print(f"Finished reading video {video_path} early, or error occurred.")
+                break
+            # Resize frame to ensure consistency
+            frame_resized = cv2.resize(frame, frame_size)
+            out.write(frame_resized)
+
+        cap.release()
+
+    out.release()
+
+
+if __name__ == "__main__":
+    # image_paths = ['image1.jpg', 'image2.jpg', 'image3.jpg']
+    # output_video_path = 'output_video.mp4'
+    # frame_size = (1280, 720)  # Width, Height - change according to your needs
+    #
+    # images_to_video(image_paths, output_video_path, frame_size)
+    # Example usage:
+    video_paths = ['video1.mp4', 'video2.mp4', 'video3.mp4']  # Add your video paths here
+    output_video_path = 'output_video.mp4'
+    frame_size = (1280, 720)  # Width, Height - change according to your needs
+
+    videos_to_video(video_paths, output_video_path, frame_size)
+
+# if __name__ == "__main__":
+#     import uvicorn
+#
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
 
