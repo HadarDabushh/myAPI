@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import re  # Regular expressions module
 import openai
@@ -6,7 +7,6 @@ from fastapi import FastAPI, File, UploadFile
 from gradio_client import Client
 from pydub import AudioSegment
 import cv2
-import numpy as np
 import requests
 from PIL import Image
 from io import BytesIO
@@ -17,7 +17,8 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 # Initialize Gradio Client with your Hugging Face Space API endpoint
-client = Client("https://jefercania-speech-to-text-whisper.hf.space/--replicas/934ee/")
+voice_to_text_client = Client("https://jefercania-speech-to-text-whisper.hf.space/--replicas/934ee/")
+audio_to_voice_client = Client("https://csukuangfj-music-source-separation.hf.space/--replicas/p0sze/")
 
 
 @app.post("/transcribe")
@@ -45,8 +46,10 @@ async def transcribe(audio: UploadFile = File(...)):
     # First, generate character descriptions
     character_descriptions = generate_character_descriptions(story)
 
+    frames = generate_storyboard(story, duration_seconds)
+    extended_frames = extand_frames(frames)
     # Now, generate key frames and enhance them with character descriptions
-    key_frames_with_characters = generate_key_frames_with_characters(story, character_descriptions, duration_seconds)
+    key_frames_with_characters = generate_key_frames_with_characters(extended_frames, character_descriptions)
 
     # Generate images for each key frame
     for i, frame in enumerate(key_frames_with_characters):
@@ -57,62 +60,76 @@ async def transcribe(audio: UploadFile = File(...)):
 
 async def generate_text(audio_file):
     """Using Gradio- Generate text from the given audio file."""
-    return client.predict(
+    return voice_to_text_client.predict(
         audio_file,
         api_name="/predict"
     )
 
 
+async def generate_voice(audio_file):
+    return audio_to_voice_client.predict(
+            audio_file,
+            fn_index=3
+    )[0]
+
+
 def generate_story(song_lyrics, n):
     """Generate a short story from the given song lyrics."""
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": f"""Prompt:
-        "Transform the following song lyrics into a short story. Capture the essence, emotions, and imagery conveyed in 
-        the lyrics to create a narrative that flows like a song clip. The story should weave together the themes of the 
-        song, bring characters to life, and visualize the setting in a way that complements the song's message. 
-        Incorporate elements of hope, struggle, love, or any other prominent themes from the lyrics to enrich the story."
-
-        Song Lyrics:
-        {song_lyrics}
-
-        Additional Instructions:
-
-        Ensure the story has a clear beginning, middle, and end.
-        Include at least one main character who embodies the song's themes.
-        Describe settings that reflect the mood and tone of the song.
-        If the song mentions specific events or imagery, use them to drive the plot or deepen the narrative.
-        Conclude the story in a way that echoes the song's core message or leaves the reader with a thematic takeaway."""}],
-        temperature=0.7,
-        max_tokens=int(50 * n),
-        top_p=1.0,
-        api_key=openai.api_key
-    )
-    # Access the generated content from the choices array
-    story = response['choices'][0]['message']['content'].strip()
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": f"""Prompt:
+            "Transform the following song lyrics into a short story. Capture the essence, emotions, and imagery conveyed in 
+            the lyrics to create a narrative that flows like a song clip. The story should weave together the themes of the 
+            song, bring characters to life, and visualize the setting in a way that complements the song's message. 
+            Incorporate elements of hope, struggle, love, or any other prominent themes from the lyrics to enrich the story.
+    
+            Song Lyrics:
+            {song_lyrics}
+    
+            Additional Instructions:
+    
+            Ensure the story has a clear beginning, middle, and end.
+            Include at least one main character who embodies the song's themes.
+            Describe settings that reflect the mood and tone of the song.
+            If the song mentions specific events or imagery, use them to drive the plot or deepen the narrative.
+            Conclude the story in a way that echoes the song's core message or leaves the reader with a thematic takeaway."""}],
+            temperature=0.7,
+            max_tokens=int(50 * n),
+            top_p=1.0,
+            api_key=openai.api_key
+        )
+        # Access the generated content from the choices array
+        story = response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        logging.error(f"Error generating story: {e}")
+        story = "Failed to generate a story from the song lyrics."
 
     return story.replace("\n", " ").strip()
 
 
 def generate_character_descriptions(story):
-    prompt = f"""Examine the short story provided and pinpoint the characters it features. For each character, generate a detailed 
-        physical description that captures their defining physical features, specific types of clothing they might wear, 
-        and any distinctive accessories that characterize them. If the narrative lacks explicit descriptions of a character's 
-        appearance, use contextual clues and your creativity to deduce and elaborate a fitting appearance that aligns with 
-        their personality and the story's setting. The descriptions should include the style, type, and color of the clothing, 
-        reflecting the character's unique traits and the atmosphere of the story. Present this information in a dictionary format, 
-        where each character's name is a key linked to a value containing their comprehensive physical description, including 
-        clothing specifics.
+    prompt = f"""
+        Based on the short story provided, create a detailed and specific physical description for each character mentioned. 
+        The description should be precise enough to ensure the character's visual representation remains consistent across various images. 
+        Highlight each character's ethnicity, exact hairstyle and color, eye color, and any unique facial features. 
+        Describe the exact outfit they are wearing, including garment types, colors, and any distinctive designs or logos. 
+        Include descriptions of any consistent accessories they carry or wear that are significant to their character. 
+        If the story does not provide detailed descriptions, use creative license to develop a fitting appearance based on the character's role and actions.
+        Present the descriptions in a dictionary format with each character's name as a key and their detailed description as the value. 
 
-    Short Story:
-    {story}
+        Short Story:
+        {story}
 
-    Example of expected output format:
-    {{
-        "John Doe": "A tall man with short brown hair, wearing glasses, a blue shirt, and dark pants.",
-        "Jane Smith": "A woman with shoulder-length curly blonde hair, green eyes, wearing a red dress and a gold necklace."
-    }}
-    """
+        Example of expected output format:
+        {{
+            "John": "A man of average height with neatly combed dark brown hair, clear square-framed glasses 
+            perched on the bridge of his nose. He wears a crisp, ironed blue button-up shirt, tucked into tailored charcoal grey trousers.",
+            "Mary": "A petite woman with vibrant, shoulder-length curly blonde hair that frames her oval face. 
+            Her eyes are a striking emerald green, accentuated by a subtle touch of mascara. She dons an elegant ruby 
+            red A-line dress that falls just above the knee, complemented by a delicate gold necklace featuring a single diamond pendant."
+        }}
+        """
 
     # Call the OpenAI API with the prompt
     response = openai.ChatCompletion.create(
@@ -140,37 +157,23 @@ def generate_storyboard(story, n):
         model="gpt-3.5-turbo",
         messages=[
             {
-                "role": "system",
+                "role": "user",
                 "content": f"""
                 Prompt:
-                Given the short story below, identify and describe {n} key frames that capture the most significant moments, 
-                scenes, or elements of the story. These key frames should visually represent the narrative's progression, 
-                highlight important characters, settings, and events. 
-                For each key frame, provide a detailed description that includes the characters involved, their actions, 
-                the setting, and any notable objects or symbolism. Ensure that each description is detailed enough to be visually represented in an image.
-                Additionally, ensure that the key frames create a coherent flow that narratively connects one frame to the next, 
-                providing a seamless visual narrative suitable for a video format. 
-
-                Short Story(3D digital art CGI style):
+                Identify and describe {n} key moments from the story that are pivotal for storytelling. 
+                Each key frame should capture a significant event or emotional transition, 
+                providing a visual snapshot of the narrative arc. Emphasize character interactions, 
+                environmental details, and emotional depth to guide the creation of compelling visuals.
+                
+                Short Story:
                 {story}
-
-                Ensure each key frame is distinct and contributes to the narrative's overall flow. 
-                Focus on moments that offer visual, emotional, or thematic depth to the setting. 
-                Describe each frame in a way that provides a clear visual guide for image generation and ensures a matching flow for all the frames. 
-                The descriptions should be formatted as a list where each item represents a key frame description, seperated by an at (@).
+                
+                Instructions for Key Frames:
+                - Ensure each key frame is visually distinct and contributes meaningfully to the story's progression.
+                - Emphasize visual, emotional, and thematic depth, with clear transitions between frames.
+                - Provide descriptions that offer a clear visual guide for CGI image generation.
+                - Format the descriptions as a {n} long list, with each item representing a key frame description, separated by an at (@).
                 """
-            },
-            {
-                "role": "user",
-                "content": f"""Please identify and describe {n} key frames from the story, ensuring a seamless narrative flow suitable for video. 
-                           Format the descriptions as a list, with each item providing a detailed visual guide for a key frame, seperated by an at (@).
-                           Example of expected output format: "
-                           Lee sitting in his room surrounded by musical instruments and looking thoughtfully at a photo of Darawar, 
-                           Lee picking up his guitar and starting to play a melody filled with emotion, 
-                           A close-up of Lee's hand strumming the guitar strings, 
-                           Lee recording a heartfelt video message for Darawar, 
-                           Lee sending the video message and looking hopeful.
-                           """
             }
         ],
         temperature=0.7,
@@ -187,16 +190,68 @@ def generate_storyboard(story, n):
     return frame_descriptions
 
 
-def generate_key_frames_with_characters(story, character_descriptions, n):
+def extand_frames(key_frames):
+    # """
+    # Generate intermediate key frames to create smooth transitions between existing key frames.
+    # :param key_frames: List of existing key frames.
+    # :return: List of original and intermediate key frames.
+    # """
+    # expanded_frames = []
+    # for i in range(len(key_frames)):
+    #     expanded_frames.append(key_frames[i])
+    #     if i < len(key_frames) - 1:  # If not the last frame
+    #         # Generate a description for an intermediate frame
+    #         transition_description = f"""
+    #             Prompt:
+    #             We are creating a transitional scene to connect two existing key frames and provide a smooth narrative
+    #             progression for an animated video. Please craft a description for a transitional scene that bridges the
+    #             gap between the following moments in the narrative. The description should reflect subtle changes in setting,
+    #             character emotions, and actions that lead from one key frame to the next.
+    #
+    #             End of Frame {i}:
+    #             {key_frames[i]}
+    #
+    #             Beginning of Frame {i + 1}:
+    #             {key_frames[i + 1]}
+    #
+    #             Please describe the transitional scene with sufficient detail for creating a 3D digital art CGI style
+    #             image that captures the essence of a story's progression. Your description should be enclosed
+    #             within '@' symbols for clarity.
+    #
+    #             Format your response as:
+    #             '@transitional scene description@'
+    #             """
+    #         try:
+    #             # Call the OpenAI API with the transition_description
+    #             response = openai.ChatCompletion.create(
+    #                 model="gpt-3.5-turbo",
+    #                 messages=[{"role": "system", "content": transition_description}],
+    #                 temperature=0.7,
+    #                 top_p=1.0,
+    #             )
+    #             response_content = response['choices'][0]['message']['content'].strip()
+    #
+    #             # Use regex to extract the text enclosed within '@' symbols
+    #             intermediate_frame = re.search(r'@(.+?)@', response_content).group(1).strip()
+    #             logging.info(f"Intermediate frame generated")
+    #         except Exception as e:
+    #             logging.error(f"Error generating intermediate frame: {e} \n response_content: {response_content}")
+    #             intermediate_frame = f"Failed to generate a transitional scene between frames {i} and {i + 1}."
+    #
+    #         expanded_frames.append(intermediate_frame)
+    #
+    # return expanded_frames
+    return key_frames
+
+
+def generate_key_frames_with_characters(key_frames, character_descriptions):
     """
     Generate key frames from the story and add relevant character descriptions to each frame.
-    :param story: The story text.
+    :param key_frames: List of key frames generated from the story.
     :param character_descriptions: Dictionary of character names to descriptions.
     :param n: Number of key frames to generate.
     :return: List of key frames with character descriptions.
     """
-    key_frames = generate_storyboard(story, n)  # This function is assumed to be defined already
-
     frames_with_characters = []
     for frame in key_frames:
         # Process each frame to find mentioned characters and add their descriptions
@@ -225,12 +280,24 @@ def generate_story_image(description: str, index: int):
     # Define the output path for the image
     image_filename = f"generated_image{index}.jpg"
     output_path = os.path.join(story_images_dir, image_filename)
+    prompt = f"""Prompt:
+        Generate an image in a 3D digital art CGI style that visually narrates the following scene description. 
+        Please ensure that the image accurately includes the characters as described, with attention to their defining 
+        features and the emotional context of the scene. The final image should be suitable for inclusion in a sequence 
+        of images that will collectively tell the story in a video format.
+        
+        Scene Description:
+        {description}
+        
+        Include precise details of the characters as per their descriptions in the story to maintain visual consistency 
+        throughout the video.
+        """
 
     # Generate an image using DALL-E
     try:
         response = openai.Image.create(
             model="dall-e-3",
-            prompt="use 3D digital art CGI style: " + description + "make sure to include the precise characters",
+            prompt=prompt,
             n=1,
             size="1024x1024",
         )
@@ -303,10 +370,13 @@ def videos_to_video(video_paths, output_video_path, frame_size, fps=30):
 
 
 if __name__ == "__main__":
-    image_paths = ["story_images/" + path for path in os.listdir("story_images") if re.match(r"generated_image\d+\.jpg", path)]
+    # Determine the number of image files in the directory
+    num_files = len([name for name in os.listdir("story_images") if name.endswith(".jpg")])
+    # Construct the paths with ordered numbers from 0 to n
+    image_paths = [f"story_images/generated_image{i}.jpg" for i in range(num_files)]
     print(image_paths)
     output_video_path = 'output_video.mp4'
-    frame_size = (1280, 720)  # Width, Height - change according to your needs
+    frame_size = (1024, 1024)  # Width, Height - change according to your needs
 
     images_to_video(image_paths, output_video_path, frame_size)
     # Example usage:
