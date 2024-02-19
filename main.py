@@ -1,7 +1,10 @@
 import io
+import json
 import logging
 import os
 import re  # Regular expressions module
+import time
+
 import numpy as np
 import openai
 from fastapi import FastAPI, File, UploadFile
@@ -14,7 +17,7 @@ from io import BytesIO
 from moviepy.editor import VideoFileClip, AudioFileClip
 
 
-# openai.api_key = os.getenv("OPENAI_API_KEY") or "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"
+# $env:OPENAI_API_KEY="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"
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 
@@ -22,7 +25,7 @@ app = FastAPI()
 # Initialize Gradio Client with your Hugging Face Space API endpoint
 voice_to_text_client = Client("https://jefercania-speech-to-text-whisper.hf.space/--replicas/934ee/")
 audio_to_voice_client = Client("https://mohamedrashad-audio-separator.hf.space/")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", handlers=[logging.StreamHandler()])
+logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
 
 @app.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...)):
@@ -46,19 +49,38 @@ async def transcribe(audio: UploadFile = File(...)):
 
     # TO USE THE SEPARATED AUDIO CHANGE THE PATH TO THE SEPARATED_AUDIO_PATH
     # Transcribe the separated voice audio
-    result = await generate_text(temp_audio_path)
+    # result = await generate_text(temp_audio_path)
+
+    with open(temp_audio_path, "rb") as audio_file:
+        result = openai.Audio.transcribe(
+            model="whisper-1",
+            file=audio_file,
+        )
+    # result = "I'll place my heart on your hand made bruises Heal your scars without lame excuses I can be your happy place With me you won't know heartache I'll place my heart on your hand Made bruises Heal your scars without lame excuses I can be your happy place With me we won't know heartache"
+    logging.info(f"Transcription: {result}")
 
     # Remove temporary files
     os.remove(temp_audio_path)
     # os.remove(separated_audio_path)
 
     story = generate_story(result, duration_seconds)
+    # story="""In a small town nestled among rolling hills and lush greenery, there lived a young woman named Lily. She carried the weight of the world on her shoulders, her heart heavy with the scars of a painful past. Her once vibrant spirit had dimmed, overshadowed by the bruises life had left on her soul.
+    #     One day, a stranger arrived in town, his presence a breath of fresh air in the stagnant atmosphere. His name was Jack, and he exuded a warmth that drew Lily to him like a moth to a flame. In him, she saw a glimmer of hope, a promise of healing that she had longed for but never dared to believe in.
+    #     As they spent time together, Jack showed Lily a kindness she had never known. He listened to her stories without judgment, held her hand through her dar
+    #     kest moments, and slowly but surely, he began to mend the wounds that had festered within her for so long. With each passing day, Lily felt herself coming alive again, her heart blooming like a flower after a long winter.
+    #     Jack became her happy place, a sanctuary in a world that had often been cruel and unforgiving. He showed her that love could be gentle and patient, that it could heal even the deepest of scars. And in his arms, Lily found a peace she had thought was lost to her forever.
+    #     Together, they walked through the town, hand in hand, their laughter ringing through the streets like a melody. They were a picture of hope and resilience, two souls brought together by fate to find solace in each other's presence.
+    #     And as the sun set on the horizon, painting the sky in hues of pink and gold, Lily knew that she had found her heart's true home in Jack. He had placed
+    #     his heart on her hand-made bruises, healed her scars without lame excuses, and in doing so, had shown her that with him, she would never know heartache again.
+    #     In that moment, Lily realized that love had the power to transform even the darkest of nights into the brightest of days. And as she looked into Jack's
+    #     eyes, she knew that she was finally free to embrace the happiness she had so longed for. Together, they stood strong, their hearts entwined in a bond that would weather any storm, their love a beacon of light in a world that often seemed shrouded in darkness.
+    #     """
     character_descriptions = generate_character_descriptions(story)
     frames = generate_storyboard(story, duration_seconds)
     key_frames_with_characters = generate_key_frames_with_characters(frames, character_descriptions)
 
     # Generate images for each key frame
-    for i, frame in enumerate(key_frames_with_characters):
+    for i, frame in enumerate(key_frames_with_characters[:15]):
         generate_story_image(frame, i)
 
     return {
@@ -66,7 +88,7 @@ async def transcribe(audio: UploadFile = File(...)):
         "duration": duration_seconds,
         "story": story,
         "character_description": character_descriptions,
-        "frames": key_frames_with_characters
+        "frames": frames
     }
 
 async def generate_text(audio_file):
@@ -116,47 +138,68 @@ def generate_story(song_lyrics, n):
         logging.error(f"Error generating story: {e}")
         story = "Failed to generate a story from the song lyrics."
 
+    logging.info(f"Story generated: {story}")
     return story.replace("\n", " ").strip()
 
 
-def generate_character_descriptions(story):
+def generate_character_descriptions(story, max_retries=3):
     prompt = f"""
-        Based on the story provided, create a detailed and specific physical description for each character mentioned. 
-        The description should be precise enough to ensure the character's visual representation remains consistent across various images. 
-        Highlight each character's ethnicity, exact hairstyle and color, eye color, and any unique facial or skin features. 
-        Describe the exact outfit they are wearing, including garment types, colors, and any distinctive designs. 
-        Include descriptions of any consistent accessories they carry or wear that are significant to their character or any current body condition relevant to the story. 
-        If the story does not provide detailed descriptions, use creative license to develop a fitting appearance based on the character's role and actions.
-        Present the descriptions in a dictionary format with each character's name as a key and their detailed description as the value. 
+        Based on the story provided, create concise yet specific physical descriptions for each character mentioned.
+        Focus on the most distinctive features that will ensure the characters are recognizable and consistent across various images.
+        Keep the descriptions brief but clear, highlighting only:
+        
+        - Pinpoint each character's gender and approximate age.
+        - The most defining aspect of their ethnicity or facial features.
+        - Key elements of their hairstyle and color, and eye color.
+        - Detail the characters' clothing with specificity, including colors and exact items they are wearing in this scene, to reflect their personality and the context of the moment.
+        - One accessory or item that is particularly significant to their character or to the story at this moment.
+        
+        Use creative license to fill in gaps from the story as needed, but keep the focus narrow to maintain brevity.
+        Present the descriptions in a dictionary format with each character's name as a key and their succinct description as the value.
 
         Story:
         {story}
 
         Example of expected output format:
         {{
-            "John": "A man of average height with neatly combed dark brown hair, clear square-framed glasses 
-            perched on the bridge of his nose. He wears a crisp, ironed blue button-up shirt, tucked into tailored charcoal grey trousers.",
-            "Mary": "A petite woman with vibrant, shoulder-length curly blonde hair that frames her oval face. 
-            Her eyes are a striking emerald green, accentuated by a subtle touch of mascara. She dons an elegant ruby 
-            red A-line dress that falls just above the knee, complemented by a delicate gold necklace featuring a single diamond pendant."
+            "Alex": "A mid-30s female with sharp features, embodying her Irish descent. Her fiery red hair is cut short, complementing her piercing blue eyes. She's dressed in a sleek, black motorcycle jacket over a white tank top, dark jeans, and combat boots, with a silver pendant necklace.",
+            "Michael": "A 22-year-old male with a lean build, showcasing his East Asian heritage through his gentle facial structure. His hair is dyed platinum blonde, adding contrast to his dark brown eyes. Wears casual graphic tees, ripped jeans, and sneakers, always seen with his vintage camera."
         }}
         """
 
-    # Call the OpenAI API with the prompt
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_tokens=1024,
-        top_p=1.0,
-        api_key=openai.api_key
-    )
+    for attempt in range(max_retries):
+        try:
+            # Call the OpenAI API with the prompt
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=1024,
+                top_p=1.0,
+                api_key=openai.api_key
+            )
 
-    # Process the response to parse into a dictionary
-    # Assuming the model returns the dictionary in the format specified in the prompt
-    character_descriptions = eval(response['choices'][0]['message']['content'])
+            # Extract the response content
+            response_content = response['choices'][0]['message']['content'].strip().replace("\n", " ")
+            logging.info(response_content)
+            # Parse the response content as eval
+            character_descriptions = eval(response_content)
+            logging.info(f"Character descriptions generated!")
+            return character_descriptions  # Return the descriptions if parsing is successful
 
-    return character_descriptions
+        except json.JSONDecodeError as e:
+            # If a JSON decode error occurred, print an error message and retry
+            print(f"Attempt {attempt + 1} failed with a JSON decode error: {e}")
+            time.sleep(1)  # Wait for 1 second before retrying to avoid hitting the API too quickly
+
+        except Exception as e:
+            # If any other error occurred, print an error message and retry
+            logging.error(f"Attempt {attempt + 1} failed with an error: {e}")
+            time.sleep(1)  # Wait for 1 second before retrying
+
+    # If all retries failed, return an empty dictionary or raise an exception
+    logging.error("All attempts to generate character descriptions have failed.")
+    return {}
 
 
 def generate_storyboard(story, n):
@@ -170,23 +213,44 @@ def generate_storyboard(story, n):
             {
                 "role": "user",
                 "content": f"""
-                Provide {n} key frames from the following story that illustrate the unfolding of events and the story's progression. 
-                Each key frame should be conceptualized as a continuation of the last, 
-                showcasing a pivotal change that advances the narrative. From a director's point of view, 
-                describe the situation in such a way that allows for the creation of an accurate image depicting the scene. 
-                In your descriptions, detail the positioning of characters, the setting, 
-                and any visible changes to the scene that highlight the story's development. 
-                Emphasize how each frame builds upon the previous one, marking a significant moment or transition in the storyline.
+                You are creating a music video based on the following story, Provide {n} detailed key scenes (Separated by an at '@') 
+                that will be visualized in images to show the story's flow. 
+                Each scene should focus on just one interaction, setting, and the moment itself. 
+                Position the characters as if they were actors within a movie scene, engaged with each other or the environment, 
+                rather than facing the audience.
                 
                 Story:
                 {story}
-                
+
                 Instructions for Key Frames:
-                - Ensure each key frame visually builds upon the last, capturing a critical moment or turning point in the story that clearly demonstrates the narrative progression.
-                - Your descriptions should serve as precise visual scripts for CGI image generation, focusing on the spatial arrangement of characters, environmental settings, and visible details, including the changes from the previous frame.
-                - Highlight the emotional tone, dynamics between characters, and significant environmental or situational changes to enrich the visual storytelling.
-                - Format your descriptions as a list of {n} items, with each entry providing a detailed description of a key frame, emphasizing the transition and change from the previous scene, separated by an at (@).
+                - Emphasize the characters' engagement with their surroundings or each other, and specify the direction of their gaze.
+                - Describe the spatial arrangement, the frame's view, and environmental settings as a director would for a movie scene.
+                - Highlight emotional tones, character dynamics, and environmental changes to enrich visual storytelling.
+                - Make sure that you focus only on one instruction each frame.
+                - Format the descriptions with detailed scenes, each separated by an at (@), focusing on narrative progression and character interaction within the scene.
+                
+                Detail is crucial. The more specific the instructions, the more focused the resulting images will be on the storytelling elements.
                 """
+                # As I'm creating a music video based on the following story, I need {n} detailed key scenes (separated by an at '@')
+                # that will be visualized in images (using DALL-E) to show the story's flow.
+                # Each scene should be rich in details to paint a complete picture in at least 5 sentences,
+                # focusing on the interactions, setting, and the moment itself, position the characters as if they were actors.
+                #
+                # Story:
+                # {story}
+                #
+                # Instructions for Key Frames:
+                # - Focus on the spatial arrangement of characters, environmental settings, the frames view, and visible details to serve as
+                # precise visual scripts for CGI image generation in DALL-E.
+                # - Highlight the emotional tone, dynamics between characters, and significant environmental or situational
+                # changes to enrich the visual storytelling and making the frame as a directors movie scene.
+                # - Ensure each key frame visually builds upon the last, capturing critical situations or turning points in
+                # the story that clearly demonstrate the narrative progression from scene to scene.
+                # - Format your descriptions as a list of {n} items, with each entry providing a detailed description of a
+                # key frame, separated by an at ('@').
+                #
+                # Get as much into detail as possible. The more detailed the better.
+                # """
             }
         ],
         temperature=0.7,
@@ -199,7 +263,10 @@ def generate_storyboard(story, n):
 
     # Splitting the generated text into a list of descriptions based on at (@) separator
     frame_descriptions = [desc.strip() for desc in generated_text.split("@") if desc.strip()]
+    if len(frame_descriptions) < n:
+        frame_descriptions = [desc.strip() for desc in re.split(r'\d+\.', generated_text) if desc.strip()]
 
+    logging.info(f"Storyboard generated: {frame_descriptions}")
     return frame_descriptions
 
 
@@ -269,7 +336,7 @@ def generate_key_frames_with_characters(key_frames, character_descriptions):
         # Process each frame to find mentioned characters and add their descriptions
         frame_description = frame
         for character, description in character_descriptions.items():
-            if character in frame:
+            if character.lower() in frame.lower():
                 frame_description += f" {character} Description: {description}"
 
         frames_with_characters.append(frame_description)
@@ -277,7 +344,7 @@ def generate_key_frames_with_characters(key_frames, character_descriptions):
     return frames_with_characters
 
 
-def generate_story_image(description: str, index: int):
+def generate_story_image(description: str,index: int):
     """
     Generates an image based on a given description using DALL-E,
     and saves the generated image in the 'story_images' directory.
@@ -293,8 +360,13 @@ def generate_story_image(description: str, index: int):
     image_filename = f"generated_image{index}.jpg"
     output_path = os.path.join(story_images_dir, image_filename)
     prompt = f"""
-        Generate an image in a 3D digital art CGI style that visually narrates the following scene description.         
-        Scene Description:
+        Create an image that captures both the essence of the scene and the characters within it, 
+        focusing equally on the atmosphere and the character interactions. 
+        Ensure that the characters are integrated into the scene in a way that supports the overall mood and theme, 
+        without overshadowing the environmental and atmospheric details. 
+        The image should be a balanced composition of character and scene, illustrating the story's emotions and settings vividly.
+        Style: 3D digital art CGI
+        Description:
         {description}
         """
 
@@ -317,10 +389,8 @@ def generate_story_image(description: str, index: int):
         image.save(output_path)
 
         logging.info(f"Image successfully saved to {output_path}")
-        print(f"Image successfully saved to {output_path}")
     except Exception as e:
         logging.error(f"Failed to generate or save image: {e}")
-        print(f"Failed to generate or save image: {e}")
 
 
 def images_to_video_with_transitions(image_paths, output_video_path, frame_size, overall_fps=40, transition_frames=15, display_duration=1):
