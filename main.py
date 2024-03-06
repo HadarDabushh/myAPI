@@ -32,7 +32,7 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
     logging.info(f"New API call was made for song '{song_name}' by {singer}!")
     # Generate the first image for the video based on the song name and singer
     generate_first_image(song_name, singer)
-
+    
     # # Read the uploaded file
     # audio_data = await audio.read()
     # # Create an in-memory file object
