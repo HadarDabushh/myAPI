@@ -27,12 +27,16 @@ audio_to_voice_client = Client("https://broadfield-music-separation.hf.space/--r
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", handlers=[logging.StreamHandler()])
 
 
+@app.get("/hello")
+async def read_root():
+    return {"message": "Welcome to the Music Video Generator API!"}
+
 @app.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...), song_name: str = Query(default=None), singer: str = Query(default=None)):
     logging.info(f"New API call was made for song '{song_name}' by {singer}!")
     # Generate the first image for the video based on the song name and singer
     generate_first_image(song_name, singer)
-    
+
     # # Read the uploaded file
     # audio_data = await audio.read()
     # # Create an in-memory file object
