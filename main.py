@@ -39,6 +39,33 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
     # Generate the first image for the video based on the song name and singer
     generate_first_image(song_name, singer)
 
+    Transcription, duration_seconds, temp_audio_path = await audio_to_text(audio)
+    log_event("INFO", f"Transcription: {Transcription}")
+
+    frames_with_characters = await text_to_frames(Transcription, duration_seconds)
+    log_event("INFO", f"Frames with characters: {frames_with_characters}")
+
+    video_path = await generate_final_video(frames_with_characters, temp_audio_path)
+
+    # Remove temporary files
+    os.remove(temp_audio_path)
+
+    return FileResponse(path=video_path, media_type='video/mp4', filename="final_video.mp4")
+
+
+async def text_to_frames(transcription, duration_seconds):
+    """Convert the transcribed text to a series of key frames with character descriptions."""
+    story = generate_story(transcription)
+    character_descriptions = generate_character_descriptions(story)
+    log_event("INFO", f"Character descriptions: {character_descriptions}")
+    frames = generate_storyboard(story, int(duration_seconds * (2 / 3)))
+    frames_with_characters = generate_key_frames_with_characters(frames, character_descriptions)
+
+    return frames_with_characters
+
+
+async def audio_to_text(audio):
+    """Convert the uploaded audio file to text using OpenAI's Speech-to-Text API."""
     # Read the uploaded file
     audio_data = await audio.read()
     # Create an in-memory file object
@@ -47,67 +74,18 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
     audio_segment = AudioSegment.from_file(audio_file, format=audio.filename.split('.')[-1])
     # Calculate the duration of the audio file in seconds
     duration_seconds = len(audio_segment) // 1000.0
-
     # so you may need to save the file temporarily (ensure you have permission and space).
     temp_audio_path = "temp_" + audio.filename
     with open(temp_audio_path, "wb") as temp_audio_file:
         temp_audio_file.write(audio_data)
-
     new_audio_path = extract_voice_from_music(temp_audio_path)
     log_event("INFO", f"vocals path: {new_audio_path}")
-
     with open(new_audio_path, "rb") as audio_file:
         Transcription = openai.Audio.transcribe(
             model="whisper-1",
             file=audio_file,
         )
-    # Transcription = "But you're going, and you know that All you have to do is stay a minute Just take your time, the clock is ticking So stay, all you have to do is wait A second, your hands on mine The clock is ticking, don't stay Thanks for watching!"
-    log_event("INFO", f"Transcription: {Transcription}")
-
-    story = generate_story(Transcription)
-    # story = """
-    # In the dim glow of the streetlamp, on a bench that had known too many farewells, sat Amelia. The city around her throbbed with the pulse of lives moving too quickly, each second slipping through fingers like grains of sand. She clutched her coat tighter against the evening chill, a physical attempt to hold onto something, anything, as everything else seemed to be slipping away.
-    #
-    # Across from her, Michael shuffled his feet, a dance of hesitation. His eyes, usually so full of stories and laughter, were now clouded with a weight Amelia could feel pressing down on them both. They were at a crossroads, a moment suspended in time where every tick of the clock thundered louder than the city's cacophony.
-    #
-    # "But you're going," Amelia whispered, her voice barely rising above the hum of life around them. It wasn't a question. Michael had received an offer, one that would take him thousands of miles away, to a place where their shared moments would be reduced to memories, flickering and fading like the streetlamp's light.
-    #
-    # "And you know that," Michael replied, his voice thick with unspoken emotions. He wanted to tell her that his heart was tethered to this bench, to the imprint her hand left in his. But dreams and duties called with a voice too loud to ignore, promising a future bright but uncertain.
-    #
-    # "All you have to do is stay a minute," Amelia said, her plea hanging in the air between them. She wasn't asking for promises of forever, just a pause, a breath shared in the space between leaving and left. "Just take your time, the clock is ticking."
-    #
-    # Michael sat beside her, the bench creaking under the weight of their shared sorrow. Time, that relentless thief, seemed to slow, granting them a reprieve. "So stay, all you have to do is wait," Amelia continued, her hand finding his in the darkness. For a heartbeat, or perhaps an eternity, they were suspended in a moment where the clock's ticking softened into a gentle lull.
-    #
-    # "A second, your hands on mine," she murmured, tracing the lines of his palm, memorizing the feel of him. In that touch, there was a promise, not of forever, but of now. The city's heartbeat synced with theirs, a reminder that endings were also beginnings.
-    #
-    # "The clock is ticking, don't stay," Michael finally said, his voice a whisper of resignation. It was a sacrifice, a release, because love, he realized, was letting go when every fiber of your being screamed to hold on tighter.
-    #
-    # As he stood, the distance between them grew, not just in steps but in the silent acknowledgment of what must be. "Thanks for watching," Amelia said, her voice steady despite the tears that threatened to fall. It was her gift to him, permission to chase the dreams that awaited, with the hope that one day, in another time, under a different streetlamp, their paths might cross again.
-    #
-    # And so, under the watchful eye of the city, they parted, their story a testament to the moments that define us, the love that shapes us, and the courage it takes to say goodbye. In the end, it wasn't about the staying; it was about the strength found in letting go, and the hope that love, like time, finds a way to endure.
-    # """
-
-    character_descriptions = generate_character_descriptions(story)
-    # character_descriptions = {
-    #     "Amelia": "A 25-year-old female with a delicate frame, embodying her mixed European and Latina heritage. Her long, wavy hair cascades down her back, a rich blend of dark brown with subtle caramel highlights, framing her olive-toned skin. Her eyes, a deep hazel, hold a world of emotions, reflecting the complexity of her character. She's wrapped in a thick, woolen coat, its color a soft grey that contrasts with the vibrancy of her red scarf, providing a splash of color against the city's monochrome backdrop. Underneath, she wears a simple, elegant black dress that reaches just above her knees, paired with black tights and ankle boots. A silver locket necklace, a family heirloom, rests against her chest, a constant in her ever-changing world.",
-    #     "Michael": "A 27-year-old male with a sturdy build, his features a testament to his European heritage. His hair is kept short, a neat fade that accentuates his strong jawline. His eyes, a striking gold-brown, seem to capture the light, even in the dimness of the streetlamp. Michael's attire is a careful balance of comfort and style: a dark green button-down shirt, sleeves rolled up to the elbows, revealing a watch with a leather strap on his left wrist; black jeans that fit just right; and well-worn leather boots. A small, leather-bound notebook peeks out from his shirt pocket, a companion to his thoughts and dreams."
-    # }
-    log_event("INFO", f"Character descriptions: {character_descriptions}")
-
-    if not character_descriptions:
-        return {"error": "Failed to generate character descriptions."}
-
-    frames = generate_storyboard(story)
-    frames_with_characters = generate_key_frames_with_characters(frames, character_descriptions)
-    log_event("INFO", f"Frames with characters: {frames_with_characters}")
-
-    video_path = await generate_final_video(frames_with_characters, temp_audio_path)
-
-    # Remove temporary files
-    os.remove(temp_audio_path)
-
-    # Stream the generated video file in response
-    return FileResponse(path=video_path, media_type='video/mp4', filename="final_video.mp4")
+    return Transcription, duration_seconds, temp_audio_path
 
 
 def clean_temporary_storage():
@@ -240,12 +218,12 @@ def generate_character_descriptions(story, max_retries=3):
     return {}
 
 
-def generate_storyboard(story, n=19):
+def generate_storyboard(story, number_of_frames):
     """
     Generate n key frames from the given story.
     :return: A list of n key frames
     """
-    prompt = f"""As im generating a video clip for a song based on the following story, generate {n} key frames, separeted by an at '@' symbol, that illustrate the unfolding of events and the story's progression.
+    prompt = f"""As im generating a video clip for a song based on the following story, generate {number_of_frames} key frames, separeted by an at '@' symbol, that illustrate the unfolding of events and the story's progression.
                 Each key will be generated as a dall-e prompt and will be used to generate a visual representation of the story.
                 
                 Story:
@@ -545,7 +523,7 @@ async def generate_final_video(final_frames, audio_path):
     num_files = len([name for name in os.listdir("story_images") if name.endswith(".jpg")])
     image_paths = [f"story_images\\generated_image{i}.jpg" for i in range(num_files)]
     output_video_path = "final_video.mp4"
-    frame_size = (1024, 1024)  # Width, Height - change according to your needs
+    frame_size = (1024, 1024)
 
     images_to_video_with_transitions(image_paths, "final0_video.mp4", frame_size)
     add_audio_to_video("final0_video.mp4", "final1_video.mp4", audio_path)
