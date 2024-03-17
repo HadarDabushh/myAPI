@@ -15,6 +15,7 @@ from io import BytesIO
 from moviepy.editor import VideoFileClip, AudioFileClip
 from pydub import AudioSegment
 from fastapi.responses import FileResponse
+from database import log_event
 
 # $env:OPENAI_API_KEY="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"
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -24,13 +25,14 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", han
 
 @app.get("/hello")
 async def read_root():
+    log_event("API Call", f"New API call was made for song 'wait a minute' by dudu!")
     return {"message": "Welcome to the Music Video Generator API!"}
 
 
 @app.post("/transcribe")
 async def transcribe(audio: UploadFile = File(...), song_name: str = Query(default=None),
                      singer: str = Query(default=None)):
-    logging.info(f"New API call was made for song '{song_name}' by {singer}!")
+    log_event("INFO", f"New API call was made for song '{song_name}' by {singer}!")
     # Clean up temporary storage
     clean_temporary_storage()
 
@@ -52,7 +54,7 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
         temp_audio_file.write(audio_data)
 
     new_audio_path = extract_voice_from_music(temp_audio_path)
-    logging.info(f"vocals path: {new_audio_path}")
+    log_event("INFO", f"vocals path: {new_audio_path}")
 
     with open(new_audio_path, "rb") as audio_file:
         Transcription = openai.Audio.transcribe(
@@ -60,7 +62,7 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
             file=audio_file,
         )
     # Transcription = "But you're going, and you know that All you have to do is stay a minute Just take your time, the clock is ticking So stay, all you have to do is wait A second, your hands on mine The clock is ticking, don't stay Thanks for watching!"
-    logging.info(f"Transcription: {Transcription}")
+    log_event("INFO", f"Transcription: {Transcription}")
 
     story = generate_story(Transcription)
     # story = """
@@ -90,14 +92,14 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
     #     "Amelia": "A 25-year-old female with a delicate frame, embodying her mixed European and Latina heritage. Her long, wavy hair cascades down her back, a rich blend of dark brown with subtle caramel highlights, framing her olive-toned skin. Her eyes, a deep hazel, hold a world of emotions, reflecting the complexity of her character. She's wrapped in a thick, woolen coat, its color a soft grey that contrasts with the vibrancy of her red scarf, providing a splash of color against the city's monochrome backdrop. Underneath, she wears a simple, elegant black dress that reaches just above her knees, paired with black tights and ankle boots. A silver locket necklace, a family heirloom, rests against her chest, a constant in her ever-changing world.",
     #     "Michael": "A 27-year-old male with a sturdy build, his features a testament to his European heritage. His hair is kept short, a neat fade that accentuates his strong jawline. His eyes, a striking gold-brown, seem to capture the light, even in the dimness of the streetlamp. Michael's attire is a careful balance of comfort and style: a dark green button-down shirt, sleeves rolled up to the elbows, revealing a watch with a leather strap on his left wrist; black jeans that fit just right; and well-worn leather boots. A small, leather-bound notebook peeks out from his shirt pocket, a companion to his thoughts and dreams."
     # }
-    logging.info(f"Character descriptions: {character_descriptions}")
+    log_event("INFO", f"Character descriptions: {character_descriptions}")
 
     if not character_descriptions:
         return {"error": "Failed to generate character descriptions."}
 
     frames = generate_storyboard(story)
     frames_with_characters = generate_key_frames_with_characters(frames, character_descriptions)
-    logging.info(f"Frames with characters: {frames_with_characters}")
+    log_event("INFO", f"Frames with characters: {frames_with_characters}")
 
     video_path = await generate_final_video(frames_with_characters, temp_audio_path)
 
@@ -113,7 +115,7 @@ def clean_temporary_storage():
     if os.path.exists(story_images_dir):
         for file in os.listdir(story_images_dir):
             os.remove(os.path.join(story_images_dir, file))
-    logging.info("Temporary storage cleaned.")
+    log_event("INFO", "Temporary storage cleaned.")
 
 
 def extract_voice_from_music(audio_file):
@@ -150,7 +152,7 @@ def generate_first_image(song_name, singer):
     image = Image.open(BytesIO(response.content))
     image.save(output_path)
 
-    logging.info(f"First image successfully saved to {output_path}")
+    log_event("INFO", f"First image successfully saved to {output_path}")
 
 
 def generate_story(song_lyrics):
@@ -180,10 +182,10 @@ def generate_story(song_lyrics):
         )
         story = response['choices'][0]['message']['content'].strip()
     except Exception as e:
-        logging.error(f"Error generating story: {e}")
+        log_event("ERROR", f"Error generating story: {e}")
         return
 
-    logging.info(f"Story generated: {story}")
+    log_event("INFO", f"Story generated: {story}")
     return story.replace("\n", " ").strip()
 
 
@@ -220,21 +222,21 @@ def generate_character_descriptions(story, max_retries=3):
             )
 
             response_content = response['choices'][0]['message']['content'].strip().replace("\n", " ")
-            logging.info(response_content)
+            log_event("INFO", response_content)
             # Parse the response content
             character_descriptions = eval(response_content)
-            logging.info(f"Character descriptions generated!")
+            log_event("INFO", f"Character descriptions generated!")
             return character_descriptions
 
         except json.JSONDecodeError as e:
-            logging.debug(f"Attempt {attempt + 1} failed with a JSON decode error: {e}")
+            log_event("DEBUG", f"Attempt {attempt + 1} failed with a JSON decode error: {e}")
             time.sleep(1)
 
         except Exception as e:
-            logging.debug(f"Attempt {attempt + 1} failed with an error: {e}")
+            log_event("DEBUG", f"Attempt {attempt + 1} failed with an error: {e}")
             time.sleep(1)
 
-    logging.error("All attempts to generate character descriptions have failed.")
+    log_event("ERROR", "All attempts to generate character descriptions have failed.")
     return {}
 
 
@@ -267,7 +269,7 @@ def generate_storyboard(story, n=19):
     generated_text = response['choices'][0]['message']['content'].strip().replace("\n", " ")
 
     frame_descriptions = [desc.strip() for desc in generated_text.split("@") if desc.strip()]
-    logging.info(f"Storyboard generated")
+    log_event("INFO", f"Storyboard generated")
     return frame_descriptions
 
 
@@ -283,12 +285,11 @@ def generate_key_frames_with_characters(key_frames, character_descriptions):
         # Process each frame to find mentioned characters and add their descriptions
         frame_description = frame
         for character, description in character_descriptions.items():
-            if character in frame:
-                if character.lower() in frame.lower():
-                    frame_description += f" {character} Description: {description}"
+            if character.lower() in frame.lower():
+                frame_description += f" {character} Description: {description}"
 
         frames_with_characters.append(frame_description)
-        logging.info(f"Generated frame with characters!")
+        log_event("INFO", f"Generated frame with characters!")
     return frames_with_characters
 
 
@@ -323,22 +324,22 @@ def generate_story_image(description: str, index: int):
 
         response_url = response['data'][0]['url']
         try:
-            logging.info("First time trying to check image")
+            log_event("INFO", "First time trying to check image")
             image_url = check_image(response_url, description)
             if image_url != response_url:
-                logging.info(f"Second time trying to check image")
+                log_event("INFO", f"Second time trying to check image")
                 image_url = check_image(image_url, description)
         except Exception as e:
-            logging.error(f"Image hasn't change: {e}")
+            log_event("ERROR", f"Image hasn't change: {e}")
             image_url = response_url
         # Download and save the image
         response = requests.get(image_url)
         image = Image.open(BytesIO(response.content))
         image.save(output_path)
 
-        logging.info(f"Image successfully saved to {output_path}")
+        log_event("INFO", f"Image successfully saved to {output_path}")
     except Exception as e:
-        logging.error(f"Failed to generate or save image: {e}")
+        log_event("ERROR", f"Failed to generate or save image: {e}")
 
 
 def check_image(image_path, frame_with_character_description: str):
@@ -361,10 +362,10 @@ def check_image(image_path, frame_with_character_description: str):
     )
 
     vision_response = response['choices'][0]['message']['content'].strip().replace("\n", " ")
-    logging.info(f"Image check response: {vision_response}")
+    log_event("DEBUG", f"Image check response: {vision_response}")
     corrected_image = image_path
     if "yes" != vision_response.lower()[0:3]:
-        logging.info(f"Image not suitable, generating a new image based on the corrected description.")
+        log_event("INFO", f"Image not suitable, generating a new image based on the corrected description.")
         image_response = openai.Image.create(
             model="dall-e-3",
             prompt=f"In a 3D digital art CGI style: {vision_response[4:]} + {frame_with_character_description}",
@@ -439,7 +440,7 @@ def images_to_video(image_paths, output_video_path, frame_size, fps=1):
     out.release()
 
 
-def add_audio_to_video(video_path, audio_path):
+def add_audio_to_video(input_video_path, output_video_path, audio_path):
     """
     Adds an audio track to a video file.
 
@@ -447,13 +448,13 @@ def add_audio_to_video(video_path, audio_path):
     :param audio_path: Path to the audio file to add to the video.
     """
     # Load the video file
-    video_clip = VideoFileClip(video_path)
+    video_clip = VideoFileClip(input_video_path)
     # Load the audio file
     audio_clip = AudioFileClip(audio_path)
     # Set the audio of the video clip as the audio clip
     video_clip_with_audio = video_clip.set_audio(audio_clip)
     # Write the result to the output file
-    video_clip_with_audio.write_videofile(video_path, codec="libx264", audio_codec="aac")
+    video_clip_with_audio.write_videofile(output_video_path, codec="libx264", audio_codec="aac")
     # Close the clips to free up system resources
     video_clip.close()
     audio_clip.close()
@@ -477,14 +478,16 @@ def mp3_to_srt(mp3_path, srt_path):
 
     with open(srt_path, 'w', encoding='utf-8') as srt_file:
         srt_file.write(result)
+    log_event("INFO", f"Original SRT file successfully saved.")
 
 
 def fix_srt_file(srt_path, default_extension_seconds=3):
-    """Fixes an SRT file by adding default end times to lines with missing end times that were set to None."""
+    """Fixes an SRT file by removing non-conforming lines and adding default end times to lines with missing end times."""
     with open(srt_path, 'r', encoding='utf-8') as file:
         lines = file.readlines()
 
     corrected_lines = []
+
     for line in lines:
         if '--> None' in line:
             # Extract the start time and calculate a default end time
@@ -495,8 +498,12 @@ def fix_srt_file(srt_path, default_extension_seconds=3):
         else:
             corrected_lines.append(line)
 
+    if not corrected_lines[0].strip().isdigit():
+        corrected_lines[0] = "1\n"
+
     with open(srt_path, 'w', encoding='utf-8') as file:
         file.writelines(corrected_lines)
+    log_event("INFO", f"Fixed SRT file successfully saved.")
 
 
 def calculate_end_time(start_time_str, extension_seconds):
@@ -505,7 +512,7 @@ def calculate_end_time(start_time_str, extension_seconds):
     return f"{end_time // 3600:02d}:{(end_time % 3600) // 60:02d}:{end_time % 60:02d},000"
 
 
-def add_subtitles_to_video(video_path, subtitles_path):
+def add_subtitles_to_video(input_video_path, output_video_path, subtitles_path):
     """
     Adds subtitles from an SRT file to a video using MoviePy.
 
@@ -514,24 +521,25 @@ def add_subtitles_to_video(video_path, subtitles_path):
     - subtitles_path: Path to the SRT subtitles file.
     """
     # Load the video clip
-    video_clip = VideoFileClip(video_path)
+    video_clip = VideoFileClip(input_video_path)
     subtitles_clip = SubtitlesClip(subtitles_path, lambda txt: TextClip(txt, font='Arial', fontsize=48, color='white',
                                                                         stroke_color='black'))
     # Set the subtitles to appear at the bottom of the video
     subtitles_clip = subtitles_clip.set_position(('center', 'bottom')).set_duration(video_clip.duration)
     # Overlay the subtitles on the video
     video_with_subtitles = CompositeVideoClip([video_clip, subtitles_clip])
-    video_with_subtitles.write_videofile(video_path, codec='libx264', audio_codec='aac')
+    video_with_subtitles.write_videofile(output_video_path, codec='libx264', audio_codec='aac')
 
     # Close the clips to free up system resources
     video_clip.close()
     subtitles_clip.close()
     video_with_subtitles.close()
+    log_event("INFO", f"Video with subtitles successfully saved.")
 
 
 async def generate_final_video(final_frames, audio_path):
     # Generate images for each key frame
-    for i, frame in enumerate(final_frames):
+    for i, frame in enumerate(final_frames[:5]):
         generate_story_image(frame, i + 1)
 
     num_files = len([name for name in os.listdir("story_images") if name.endswith(".jpg")])
@@ -539,12 +547,13 @@ async def generate_final_video(final_frames, audio_path):
     output_video_path = "final_video.mp4"
     frame_size = (1024, 1024)  # Width, Height - change according to your needs
 
-    images_to_video_with_transitions(image_paths, output_video_path, frame_size)
-    add_audio_to_video(output_video_path, audio_path)
+    images_to_video_with_transitions(image_paths, "final0_video.mp4", frame_size)
+    add_audio_to_video("final0_video.mp4", "final1_video.mp4", audio_path)
     mp3_to_srt(audio_path, "output.srt")
     fix_srt_file("output.srt", default_extension_seconds=3)
-    add_subtitles_to_video(output_video_path, "output.srt")
+    add_subtitles_to_video("final1_video.mp4", output_video_path, "output.srt")
 
+    log_event("INFO", f"Final video successfully saved to {output_video_path}")
     return output_video_path
 
 
