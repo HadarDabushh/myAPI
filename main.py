@@ -1,4 +1,6 @@
 import io
+import shutil
+import tempfile
 from moviepy.video.tools.subtitles import SubtitlesClip
 from moviepy.editor import TextClip, CompositeVideoClip
 import json
@@ -20,7 +22,7 @@ from database import log_event
 openai.api_key = os.getenv("OPENAI_API_KEY")
 app = FastAPI()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", handlers=[logging.StreamHandler()])
-
+temp_path = os.path.join(tempfile.gettempdir(), "music_video_generator")
 
 @app.get("/hello")
 async def read_root():
@@ -32,8 +34,6 @@ async def read_root():
 async def transcribe(audio: UploadFile = File(...), song_name: str = Query(default=None),
                      singer: str = Query(default=None)):
     log_event("INFO", f"New API call was made for song '{song_name}' by {singer}!")
-    # Clean up temporary storage
-    clean_temporary_storage()
 
     # Generate the first image for the video based on the song name and singer
     generate_first_image(song_name, singer)
@@ -48,6 +48,8 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
 
     # Remove temporary files
     os.remove(temp_audio_path)
+    # Clean up temporary storage
+    clean_temporary_storage()
 
     return FileResponse(path=video_path, media_type='video/mp4', filename="final_video.mp4")
 
@@ -74,7 +76,7 @@ async def audio_to_text(audio):
     # Calculate the duration of the audio file in seconds
     duration_seconds = len(audio_segment) // 1000.0
     # so you may need to save the file temporarily (ensure you have permission and space).
-    temp_audio_path = "temp_" + audio.filename
+    temp_audio_path = os.path.join(temp_path, "temp_" + audio.filename)
     with open(temp_audio_path, "wb") as temp_audio_file:
         temp_audio_file.write(audio_data)
     new_audio_path = extract_voice_from_music(temp_audio_path)
@@ -88,11 +90,26 @@ async def audio_to_text(audio):
 
 
 def clean_temporary_storage():
-    story_images_dir = "story_images"
-    if os.path.exists(story_images_dir):
-        for file in os.listdir(story_images_dir):
-            os.remove(os.path.join(story_images_dir, file))
-    log_event("INFO", "Temporary storage cleaned.")
+    """Clean up the temporary storage directory with simplified error handling."""
+    try:
+        # Attempt to delete the story_images directory.
+        story_images_dir = os.path.join(temp_path, "story_images")
+        if os.path.exists(story_images_dir):
+            shutil.rmtree(story_images_dir)
+
+        # Iterate through files in the temporary directory, excluding "final_video.mp4".
+        if os.path.exists(temp_path):
+            for file in os.listdir(temp_path):
+                file_path = os.path.join(temp_path, file)
+                if file != "final_video.mp4":
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path):  # Add check for directories if needed
+                        shutil.rmtree(file_path)
+
+        log_event("INFO", "Temporary storage cleaned.")
+    except Exception as e:
+        log_event("ERROR", f"Error cleaning temporary storage: {e}")
 
 
 def extract_voice_from_music(audio_file):
@@ -108,7 +125,7 @@ def extract_voice_from_music(audio_file):
 def generate_first_image(song_name, singer):
     """Generate the first image for the video based on the song name and singer."""
     # Define the directory to save images
-    story_images_dir = "story_images"
+    story_images_dir = os.path.join(temp_path, "story_images")
     os.makedirs(story_images_dir, exist_ok=True)
 
     # Define the output path for the image
@@ -279,7 +296,7 @@ def generate_story_image(description: str, index: int):
     - description: A string containing the description of the frame to be visualized.
     """
     # Define the directory to save images
-    story_images_dir = "story_images"
+    story_images_dir = os.path.join(temp_path, "story_images")
     os.makedirs(story_images_dir, exist_ok=True)
 
     # Define the output path for the image
@@ -519,16 +536,16 @@ async def generate_final_video(final_frames, audio_path):
     for i, frame in enumerate(final_frames[:5]):
         generate_story_image(frame, i + 1)
 
-    num_files = len([name for name in os.listdir("story_images") if name.endswith(".jpg")])
-    image_paths = [f"story_images\\generated_image{i}.jpg" for i in range(num_files)]
-    output_video_path = "final_video.mp4"
+    num_files = len([name for name in os.listdir(os.path.join(temp_path, "story_images")) if name.endswith(".jpg")])
+    image_paths = [os.path.join(temp_path, f"story_images\\generated_image{i}.jpg") for i in range(num_files)]
+    output_video_path = os.path.join(temp_path, "final_video.mp4")
     frame_size = (1024, 1024)
 
-    images_to_video_with_transitions(image_paths, "final0_video.mp4", frame_size)
-    add_audio_to_video("final0_video.mp4", "final1_video.mp4", audio_path)
-    mp3_to_srt(audio_path, "output.srt")
-    fix_srt_file("output.srt", default_extension_seconds=3)
-    add_subtitles_to_video("final1_video.mp4", output_video_path, "output.srt")
+    images_to_video_with_transitions(image_paths, os.path.join(temp_path, "final0_video.mp4"), frame_size)
+    add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), os.path.join(temp_path, "final1_video.mp4"), audio_path)
+    mp3_to_srt(audio_path, os.path.join(temp_path, "output.srt"))
+    fix_srt_file(os.path.join(temp_path, "output.srt"), default_extension_seconds=3)
+    add_subtitles_to_video(os.path.join(temp_path, "final1_video.mp4"), output_video_path, os.path.join(temp_path, "output.srt"))
 
     log_event("INFO", f"Final video successfully saved to {output_video_path}")
     return output_video_path
