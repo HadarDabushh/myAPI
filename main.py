@@ -17,7 +17,6 @@ from pydub import AudioSegment
 from fastapi.responses import FileResponse
 from database import log_event
 
-# $env:OPENAI_API_KEY="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"
 openai.api_key = os.getenv("OPENAI_API_KEY")
 app = FastAPI()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", handlers=[logging.StreamHandler()])
@@ -25,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", han
 
 @app.get("/hello")
 async def read_root():
-    log_event("API Call", f"New API call was made for song 'wait a minute' by dudu!")
+    log_event("INFO", f"New API call was made for song 'wait a minute' by dudu!")
     return {"message": "Welcome to the Music Video Generator API!"}
 
 
