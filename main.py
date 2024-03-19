@@ -1,6 +1,8 @@
 import io
 import shutil
 import tempfile
+
+from joblib import Parallel, delayed
 from moviepy.video.tools.subtitles import SubtitlesClip
 from moviepy.editor import TextClip, CompositeVideoClip
 import json
@@ -25,7 +27,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", han
 temp_path = os.path.join(tempfile.gettempdir(), "music_video_generator")
 
 @app.get("/hello")
-async def read_root():
+def read_root():
     log_event("INFO", f"New API call was made for song 'wait a minute' by dudu!")
     return {"message": "Welcome to the Music Video Generator API!"}
 
@@ -58,7 +60,6 @@ async def text_to_frames(transcription, duration_seconds):
     """Convert the transcribed text to a series of key frames with character descriptions."""
     story = generate_story(transcription)
     character_descriptions = generate_character_descriptions(story)
-    log_event("INFO", f"Character descriptions: {character_descriptions}")
     frames = generate_storyboard(story, int(duration_seconds * (2 / 3)))
     frames_with_characters = generate_key_frames_with_characters(frames, character_descriptions)
 
@@ -219,7 +220,7 @@ def generate_character_descriptions(story, max_retries=3):
             log_event("INFO", response_content)
             # Parse the response content
             character_descriptions = eval(response_content)
-            log_event("INFO", f"Character descriptions generated!")
+            log_event("INFO", f"Character descriptions generated for {[name for name in character_descriptions]}!")
             return character_descriptions
 
         except json.JSONDecodeError as e:
@@ -531,10 +532,13 @@ def add_subtitles_to_video(input_video_path, output_video_path, subtitles_path):
     log_event("INFO", f"Video with subtitles successfully saved.")
 
 
-async def generate_final_video(final_frames, audio_path):
-    # Generate images for each key frame
-    for i, frame in enumerate(final_frames[:5]):
-        generate_story_image(frame, i + 1)
+def generate_final_video(final_frames, audio_path):
+    # # Generate images for each key frame
+    # for i, frame in enumerate(final_frames[:5]):
+    #     generate_story_image(frame, i + 1)
+
+    # Parallel generation of images for each key frame
+    Parallel(n_jobs=4)(delayed(generate_story_image)(frame, i + 1) for i, frame in enumerate(final_frames))
 
     num_files = len([name for name in os.listdir(os.path.join(temp_path, "story_images")) if name.endswith(".jpg")])
     image_paths = [os.path.join(temp_path, f"story_images\\generated_image{i}.jpg") for i in range(num_files)]
