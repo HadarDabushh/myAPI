@@ -1,7 +1,6 @@
 import io
 import shutil
 import tempfile
-
 from joblib import Parallel, delayed
 from moviepy.video.tools.subtitles import SubtitlesClip
 from moviepy.editor import TextClip, CompositeVideoClip
