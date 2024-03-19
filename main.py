@@ -541,7 +541,7 @@ def generate_final_video(final_frames, audio_path):
     Parallel(n_jobs=4)(delayed(generate_story_image)(frame, i + 1) for i, frame in enumerate(final_frames))
 
     num_files = len([name for name in os.listdir(os.path.join(temp_path, "story_images")) if name.endswith(".jpg")])
-    image_paths = [os.path.join(temp_path, f"story_images\\generated_image{i}.jpg") for i in range(num_files)]
+    image_paths = [os.path.join(temp_path, f"story_images/generated_image{i}.jpg") for i in range(num_files)]
     output_video_path = os.path.join(temp_path, "final_video.mp4")
     frame_size = (1024, 1024)
 
