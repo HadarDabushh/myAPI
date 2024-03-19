@@ -26,8 +26,9 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", handlers=[logging.StreamHandler()])
 temp_path = os.path.join(tempfile.gettempdir(), "music_video_generator")
 
+
 @app.get("/hello")
-def read_root():
+async def read_root():
     log_event("INFO", f"New API call was made for song 'wait a minute' by dudu!")
     return {"message": "Welcome to the Music Video Generator API!"}
 
