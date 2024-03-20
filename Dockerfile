@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     && rm -rf /var/lib/apt/lists/*
 
+# Relax ImageMagick policies
+RUN sed -i '/<policy domain="coder" rights="none" pattern="MVG" \/>/d' /etc/ImageMagick-6/policy.xml && \
+    sed -i '/<policy domain="path" rights="none" pattern="@*" \/>/d' /etc/ImageMagick-6/policy.xml
+
+
 # Set the working directory in the container
 WORKDIR /app
 
