@@ -412,6 +412,7 @@ def images_to_video_with_transitions(image_paths, output_video_path, frame_size,
         previous_image = img_resized
 
     out.release()
+    log_event("INFO", f"Video with transitions successfully saved to {output_video_path}")
 
 
 def images_to_video(image_paths, output_video_path, frame_size, fps=1):
@@ -433,6 +434,7 @@ def images_to_video(image_paths, output_video_path, frame_size, fps=1):
         out.write(img_resized)
 
     out.release()
+    log_event("INFO", f"Initial video successfully saved to {output_video_path}")
 
 
 def add_audio_to_video(input_video_path, output_video_path, audio_path):
@@ -453,6 +455,7 @@ def add_audio_to_video(input_video_path, output_video_path, audio_path):
     # Close the clips to free up system resources
     video_clip.close()
     audio_clip.close()
+    log_event("INFO", f"Video with audio successfully saved to {output_video_path}")
 
 
 def mp3_to_srt(mp3_path, srt_path):
@@ -539,12 +542,13 @@ def generate_final_video(final_frames, audio_path):
 
     # Parallel generation of images for each key frame
     Parallel(n_jobs=4)(delayed(generate_story_image)(frame, i + 1) for i, frame in enumerate(final_frames))
+    log_event("INFO", "All images successfully generated.")
 
     num_files = len([name for name in os.listdir(os.path.join(temp_path, "story_images")) if name.endswith(".jpg")])
     image_paths = [os.path.join(temp_path, f"story_images/generated_image{i}.jpg") for i in range(num_files)]
     output_video_path = os.path.join(temp_path, "final_video.mp4")
-    frame_size = (1024, 1024)
 
+    frame_size = (1024, 1024)
     images_to_video_with_transitions(image_paths, os.path.join(temp_path, "final0_video.mp4"), frame_size)
     add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), os.path.join(temp_path, "final1_video.mp4"), audio_path)
     mp3_to_srt(audio_path, os.path.join(temp_path, "output.srt"))
