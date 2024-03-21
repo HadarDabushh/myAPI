@@ -82,12 +82,10 @@ async def audio_to_text(audio):
     audio_segment = AudioSegment.from_file(audio_file, format=audio.filename.split('.')[-1])
     # Calculate the duration of the audio file in seconds
     duration_seconds = len(audio_segment) // 1000.0
-    # so you may need to save the file temporarily (ensure you have permission and space).
     temp_audio_path = os.path.join(temp_path, "temp_" + audio.filename)
     with open(temp_audio_path, "wb") as temp_audio_file:
         temp_audio_file.write(audio_data)
-    # new_audio_path = extract_voice_from_music(temp_audio_path)
-    new_audio_path = temp_audio_path
+    new_audio_path = extract_voice_from_music(temp_audio_path)
     log_event("INFO", f"vocals path: {new_audio_path}")
     with open(new_audio_path, "rb") as audio_file:
         Transcription = openai.Audio.transcribe(
@@ -523,8 +521,9 @@ def add_subtitles_to_video(input_video_path, output_video_path, subtitles_path):
     Adds subtitles from an SRT file to a video using MoviePy.
 
     Parameters:
-    - video_path: Path to the input video file. Also, the path where the output video with subtitles will be saved.
+    - input_video_path: Path to the input video file.
     - subtitles_path: Path to the SRT subtitles file.
+    - output_video_path: Path where the output video with subtitles will be saved.
     """
     # Load the video clip
     video_clip = VideoFileClip(input_video_path)
@@ -544,10 +543,7 @@ def add_subtitles_to_video(input_video_path, output_video_path, subtitles_path):
 
 
 def generate_final_video(final_frames, audio_path):
-    # # Generate images for each key frame
-    # for i, frame in enumerate(final_frames[:5]):
-    #     generate_story_image(frame, i + 1)
-
+    """Generates the final video by combining the key frames with character descriptions, adding audio and subtitles."""
     # Parallel generation of images for each key frame
     Parallel(n_jobs=4)(delayed(generate_story_image)(frame, i + 1) for i, frame in enumerate(final_frames))
     log_event("INFO", "All images successfully generated.")
@@ -558,12 +554,11 @@ def generate_final_video(final_frames, audio_path):
 
     frame_size = (1024, 1024)
     images_to_video_with_transitions(image_paths, os.path.join(temp_path, "final0_video.mp4"), frame_size)
-    add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), output_video_path, audio_path)
+    add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), os.path.join(temp_path, "final1_video.mp4"), audio_path)
 
-    # add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), os.path.join(temp_path, "final1_video.mp4"), audio_path)
-    # mp3_to_srt(audio_path, os.path.join(temp_path, "output.srt"))
-    # fix_srt_file(os.path.join(temp_path, "output.srt"), default_extension_seconds=3)
-    # add_subtitles_to_video(os.path.join(temp_path, "final1_video.mp4"), output_video_path, os.path.join(temp_path, "output.srt"))
+    mp3_to_srt(audio_path, os.path.join(temp_path, "output.srt"))
+    fix_srt_file(os.path.join(temp_path, "output.srt"), default_extension_seconds=3)
+    add_subtitles_to_video(os.path.join(temp_path, "final1_video.mp4"), output_video_path, os.path.join(temp_path, "output.srt"))
 
     log_event("INFO", f"Final video successfully saved to {output_video_path}")
     return output_video_path
