@@ -20,7 +20,6 @@ from pydub import AudioSegment
 from fastapi.responses import FileResponse
 from database import log_event
 
-# "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"
 openai.api_key = os.getenv("OPENAI_API_KEY")
 app = FastAPI()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", handlers=[logging.StreamHandler()])
@@ -520,7 +519,7 @@ def add_subtitles_to_video(input_video_path, output_video_path, subtitles_path):
     """
     # Load the video clip
     video_clip = VideoFileClip(input_video_path)
-    subtitles_clip = SubtitlesClip(subtitles_path, lambda txt: TextClip(txt, font='Arial', fontsize=48, color='white',
+    subtitles_clip = SubtitlesClip(subtitles_path, lambda txt: TextClip(txt, font='DejaVu-Sans', fontsize=48, color='white',
                                                                         stroke_color='black'))
     # Set the subtitles to appear at the bottom of the video
     subtitles_clip = subtitles_clip.set_position(('center', 'bottom')).set_duration(video_clip.duration)
