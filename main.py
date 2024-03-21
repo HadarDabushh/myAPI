@@ -24,11 +24,18 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 app = FastAPI()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s", handlers=[logging.StreamHandler()])
 temp_path = os.path.join(tempfile.gettempdir(), "music_video_generator")
+final_video_path = os.path.join(temp_path, "final_video.mp4")
 
 
 @app.get("/hello")
 async def read_root():
     return {"message": "Welcome to the Music Video Generator API **BEFORE THE UPDATE**!"}
+
+
+@app.get("/download-video")
+async def download_video():
+    # Retrieve the video_path in a way that matches how it was stored/generated
+    return FileResponse(path=final_video_path, media_type='video/mp4', filename="final_video.mp4")
 
 
 @app.post("/transcribe")
@@ -45,14 +52,14 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
     frames_with_characters = await text_to_frames(Transcription, duration_seconds)
     log_event("INFO", f"Frames with characters: {frames_with_characters}")
 
-    video_path = generate_final_video(frames_with_characters, temp_audio_path)
+    final_video_path = generate_final_video(frames_with_characters, temp_audio_path)
 
     # Remove temporary files
     os.remove(temp_audio_path)
     # Clean up temporary storage
     clean_temporary_storage()
 
-    return FileResponse(path=video_path, media_type='video/mp4', filename="final_video.mp4")
+    return FileResponse(path=final_video_path, media_type='video/mp4', filename="final_video.mp4")
 
 
 async def text_to_frames(transcription, duration_seconds):
