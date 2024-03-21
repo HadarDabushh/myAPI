@@ -86,7 +86,8 @@ async def audio_to_text(audio):
     temp_audio_path = os.path.join(temp_path, "temp_" + audio.filename)
     with open(temp_audio_path, "wb") as temp_audio_file:
         temp_audio_file.write(audio_data)
-    new_audio_path = extract_voice_from_music(temp_audio_path)
+    # new_audio_path = extract_voice_from_music(temp_audio_path)
+    new_audio_path = temp_audio_path
     log_event("INFO", f"vocals path: {new_audio_path}")
     with open(new_audio_path, "rb") as audio_file:
         Transcription = openai.Audio.transcribe(
