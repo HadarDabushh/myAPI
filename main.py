@@ -45,7 +45,7 @@ async def transcribe(audio: UploadFile = File(...), song_name: str = Query(defau
     frames_with_characters = await text_to_frames(Transcription, duration_seconds)
     log_event("INFO", f"Frames with characters: {frames_with_characters}")
 
-    video_path = await generate_final_video(frames_with_characters, temp_audio_path)
+    video_path = generate_final_video(frames_with_characters, temp_audio_path)
 
     # Remove temporary files
     os.remove(temp_audio_path)
@@ -440,8 +440,9 @@ def add_audio_to_video(input_video_path, output_video_path, audio_path):
     """
     Adds an audio track to a video file.
 
-    :param video_path: Path to the original video file. Also, the path where the output video with audio will be saved.
+    :param input_video_path: Path to the original video file.
     :param audio_path: Path to the audio file to add to the video.
+    :param output_video_path: Path where the output video with audio will be saved.
     """
     # Load the video file
     video_clip = VideoFileClip(input_video_path)
