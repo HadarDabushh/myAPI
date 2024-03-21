@@ -550,10 +550,12 @@ def generate_final_video(final_frames, audio_path):
 
     frame_size = (1024, 1024)
     images_to_video_with_transitions(image_paths, os.path.join(temp_path, "final0_video.mp4"), frame_size)
-    add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), os.path.join(temp_path, "final1_video.mp4"), audio_path)
-    mp3_to_srt(audio_path, os.path.join(temp_path, "output.srt"))
-    fix_srt_file(os.path.join(temp_path, "output.srt"), default_extension_seconds=3)
-    add_subtitles_to_video(os.path.join(temp_path, "final1_video.mp4"), output_video_path, os.path.join(temp_path, "output.srt"))
+    add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), output_video_path, audio_path)
+
+    # add_audio_to_video(os.path.join(temp_path, "final0_video.mp4"), os.path.join(temp_path, "final1_video.mp4"), audio_path)
+    # mp3_to_srt(audio_path, os.path.join(temp_path, "output.srt"))
+    # fix_srt_file(os.path.join(temp_path, "output.srt"), default_extension_seconds=3)
+    # add_subtitles_to_video(os.path.join(temp_path, "final1_video.mp4"), output_video_path, os.path.join(temp_path, "output.srt"))
 
     log_event("INFO", f"Final video successfully saved to {output_video_path}")
     return output_video_path
