@@ -29,7 +29,7 @@ final_video_path = os.path.join(temp_path, "final_video.mp4")
 
 @app.get("/hello")
 async def read_root():
-    return {"message": "Welcome to the Music Video Generator API **BEFORE THE UPDATE**!"}
+    return {"message": "Welcome to the Music Video Generator API **AFTER THE UPDATE**!"}
 
 
 @app.get("/download-video")
